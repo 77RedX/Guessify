@@ -1,4 +1,4 @@
-Animal,IsMammal,CanFly,IsAquatic,IsPet,IsCarnivore,IsFoundInAfrica,IsLarge,HasFur,CanBeDomesticated,IsDangerous,IsHerbivore,HasWings,IsNocturnal,Is it eight-legged,Is it a reptile
+Animal,IsMammal,CanFly,IsAquatic,IsPet,IsCarnivore,IsFoundInAfrica,IsLarge,HasFur,CanBeDomesticated,IsDangerous,IsHerbivore,HasWings,IsNocturnal,IsEightLegged,IsReptile
 Dog,1,0,0,1,1,0,0,1,1,0,0,0,0,0,0
 Cat,1,0,0,1,1,0,0,1,1,0,0,0,1,0,0
 Elephant,1,0,0,0,0,1,1,0,0,0,1,0,0,0,0
