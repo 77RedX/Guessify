@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guessify it baby!</title>
+    
+    <link rel="stylesheet" href="stylesheet.css">
+</head>
+<body>
+        <section id="loading-screen">
+         <div class="spinner"></div>
+    </section>
+
+    
+    <section id="start-screen" class="hidden">
+         <div class="start-content">
+             <h1>Hello, I am Akinator!</h1>
+             <p>Think of a character, and I will try to guess who it is.</p>
+             
+             <img src="robot.png" alt="Mascot" class="start-screen-mascot" />
+                     
+             <button id="start-btn">Start Game</button>
+         </div>
+    </section>
+    <main id="game-container" class="hidden">
+
+         <header>
+             <h1>Guessify it baby!</h1>
+         </header>
+
+         <section id="character-area">
+             
+             <img src="robot.png" alt="Game Mascot" />
+         </section>
+
+         <section id="game-area">
+             <div id="question-box">
+                 <p class="question-text">Is your character a real person?</p>
+             </div>
+             <div id="answer-buttons">
+                <button id="yes-btn" onclick="handleAnswer('Yes')">Yes</button>
+                <button id="no-btn" onclick="handleAnswer('No')">No</button>
+             </div>
+         </section>
+
+         <footer>
+         </footer>
+
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>
+
