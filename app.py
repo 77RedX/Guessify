@@ -12,21 +12,23 @@ CORS(app)
 # --- Load model & data ---
 model = joblib.load("tree.joblib")
 df = pd.read_csv("dataset.csv")
-feature_names = df.drop("Animal", axis=1).columns.tolist()
+X_df = df.drop("Animal", axis=1).astype(int)
+feature_names = X_df.columns.tolist()
+tree = model.tree_
 
-# Question mappings
+# --- Question formatting ---
 feature_questions = {
-    f: f.replace('Is', 'Is it ').replace('Can', 'Can it ').replace('Has', 'Does it have ') + '?'
+    f: f.replace("Is", "Is it ").replace("Can", "Can it ").replace("Has", "Does it have ") + "?"
     for f in feature_names
 }
 
-# --- Global state for simplicity (can replace with sessions later) ---
+# --- Global state (for simplicity) ---
 game_state = {
-    "current_index": 0,
+    "current_node": 0,   # start at root node of the tree
     "answers": {}
 }
 
-# --- Utility: convert NumPy types to native Python ---
+# --- Utility ---
 def clean_json(obj):
     if isinstance(obj, dict):
         return {k: clean_json(v) for k, v in obj.items()}
@@ -38,18 +40,27 @@ def clean_json(obj):
         return float(obj)
     else:
         return obj
-    
+
+# --- Serve frontend ---
 @app.route("/")
 def serve_index():
     return send_from_directory(app.static_folder, "index.html")
 
+# --- Start new game ---
 @app.route("/api/start", methods=["POST"])
 def api_start():
-    game_state["current_index"] = 0
+    game_state["current_node"] = 0
     game_state["answers"] = {}
-    question = feature_questions[feature_names[0]]
+    node = game_state["current_node"]
+
+    feature_index = tree.feature[node]
+    feature_name = feature_names[feature_index]
+    question = feature_questions.get(feature_name, feature_name + "?")
+
     return jsonify({"question": question, "is_guess": False})
 
+
+# --- Handle user answer ---
 @app.route("/api/answer", methods=["POST"])
 def api_answer():
     data = request.get_json()
@@ -59,23 +70,33 @@ def api_answer():
         return jsonify({"error": "Invalid answer"}), 400
 
     value = 1 if answer == "yes" else 0
-    current_index = game_state["current_index"]
-    feature = feature_names[current_index]
-    game_state["answers"][feature] = value
+    node = game_state["current_node"]
 
-    # If we've asked all questions, make a guess
-    if current_index >= len(feature_names) - 1:
-        X_test = pd.DataFrame([game_state["answers"]], columns=feature_names).fillna(0)
-        prediction = model.predict(X_test)[0]
-        response = {"is_guess": True, "character": prediction}
+    feature_index = tree.feature[node]
+    feature_name = feature_names[feature_index]
+    game_state["answers"][feature_name] = value
+
+    # Decide next node based on the user's answer
+    threshold = tree.threshold[node]
+    if value <= threshold:
+        next_node = tree.children_left[node]
     else:
-        # Ask next question
-        game_state["current_index"] += 1
-        next_feature = feature_names[game_state["current_index"]]
-        question = feature_questions[next_feature]
-        response = {"is_guess": False, "question": question}
+        next_node = tree.children_right[node]
 
-    return jsonify(clean_json(response))
+    # Check if next node is a leaf
+    if tree.children_left[next_node] == tree.children_right[next_node]:
+        predicted_index = np.argmax(tree.value[next_node][0])
+        predicted_animal = model.classes_[predicted_index]
+        return jsonify({"is_guess": True, "character": predicted_animal})
+
+    # Otherwise, ask next question
+    game_state["current_node"] = next_node
+    next_feature_index = tree.feature[next_node]
+    next_feature = feature_names[next_feature_index]
+    next_question = feature_questions.get(next_feature, next_feature + "?")
+
+    return jsonify(clean_json({"is_guess": False, "question": next_question}))
+
 
 if __name__ == "__main__":
     app.run(debug=True)
