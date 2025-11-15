@@ -1,5 +1,6 @@
 # Guessify
 A game that guesses a character/animal/object based on some questions. 
+
 🐾 Guessify
 A self-learning animal guessing game powered by decision trees + dynamic knowledge expansion.
 
