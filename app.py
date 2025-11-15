@@ -141,9 +141,19 @@ def api_start():
     if feat is None:
         idx = np.argmax(tree.value[node][0])
         animal = model.classes_[idx]
-        return jsonify({"is_guess": True, "character": animal, "is_second_guess": False})
+        return jsonify({
+            "is_guess": True,
+            "character": animal,
+            "is_second_guess": False,
+            "can_go_back": False
+        })
 
-    return jsonify({"is_guess": False, "question": feature_questions[feat]})
+    return jsonify({
+        "is_guess": False,
+        "question": feature_questions[feat],
+        "can_go_back": False
+    })
+
 
 @app.route("/api/answer", methods=["POST"])
 def api_answer():
@@ -158,6 +168,10 @@ def api_answer():
 
     node = game_state["current_node"]
     feat = get_node_feature(node)
+    # safety: if feat is None, something's off
+    if feat is None:
+        return jsonify({"error": "Invalid traversal state"}), 500
+
     game_state["answers"][feat] = val
     game_state["user_features"][feat] = val
     game_state["asked_features"].append(feat)
@@ -168,11 +182,21 @@ def api_answer():
         idx = np.argmax(tree.value[nxt][0])
         animal = model.classes_[idx]
         game_state["current_node"] = nxt
-        return jsonify({"is_guess": True, "character": animal, "is_second_guess": False})
+        return jsonify({
+            "is_guess": True,
+            "character": animal,
+            "is_second_guess": False,
+            "can_go_back": len(game_state["asked_features"]) > 0
+        })
 
     game_state["current_node"] = nxt
     nxt_feat = get_node_feature(nxt)
-    return jsonify({"is_guess": False, "question": feature_questions[nxt_feat]})
+    return jsonify({
+        "is_guess": False,
+        "question": feature_questions[nxt_feat],
+        "can_go_back": len(game_state["asked_features"]) > 0
+    })
+
 
 @app.route("/api/start_refining", methods=["POST"])
 def api_start_refining():
@@ -194,8 +218,10 @@ def api_start_refining():
     return jsonify({
         "is_guess": False,
         "is_refining": True,
-        "question": feature_questions[first_feature]
+        "question": feature_questions[first_feature],
+        "can_go_back": False
     })
+
 
 @app.route("/api/refine_answer", methods=["POST"])
 def api_refine_answer():
@@ -205,27 +231,144 @@ def api_refine_answer():
     idx = game_state["refine_index"]
     feat = game_state["refine_queue"][idx]
 
+    # record the user's refine answer
     game_state["answers"][feat] = val
     game_state["user_features"][feat] = val
 
+    # advance index (we have now answered idx-th refining question)
     game_state["refine_index"] += 1
 
+    # If we've finished the refine queue -> make second guess
     if game_state["refine_index"] >= len(game_state["refine_queue"]):
-
+        
+        game_state["phase"] = "refining"
         user_vec = np.array([game_state["answers"].get(f, 0) for f in feature_names])
         distances = ((X_df.values - user_vec) != 0).sum(axis=1)
         best = np.argmin(distances)
         animal = df["Animal"].iloc[best]
 
         game_state["second_guess"] = animal
-        return jsonify({"is_guess": True, "character": animal, "is_second_guess": True})
 
+        # Allow going back from the second guess if there is at least one answered question
+        can_go_back = len(game_state["asked_features"]) > 0 or game_state["refine_index"] > 0
+
+        return jsonify({
+            "is_guess": True,
+            "character": animal,
+            "is_second_guess": True,
+            "is_refining": True,
+            "can_go_back": can_go_back
+        })
+
+    # Otherwise send the next refining question.
+    # Allow back once at least one refine answer has been given (so second refine question shows Back)
     nxt_feat = game_state["refine_queue"][game_state["refine_index"]]
+    can_go_back = game_state["refine_index"] > 0  # True if we've answered at least one refine question
+
     return jsonify({
         "is_guess": False,
         "is_refining": True,
-        "question": feature_questions[nxt_feat]
+        "question": feature_questions[nxt_feat],
+        "can_go_back": can_go_back
     })
+@app.route("/api/refine_back", methods=["POST"])
+def api_refine_back():
+    # Must be in refining phase
+    if game_state["phase"] != "refining":
+        return jsonify({"error": "Not in refining mode"}), 400
+
+    # Cannot go back from the very first refine question
+    if game_state["refine_index"] <= 0:
+        return jsonify({"error": "Already at first refine question"}), 400
+
+    # Move back one refine question
+    game_state["refine_index"] -= 1
+
+    # Identify which feature we are undoing
+    feat = game_state["refine_queue"][game_state["refine_index"]]
+
+    # Remove its stored answer
+    game_state["answers"].pop(feat, None)
+    game_state["user_features"].pop(feat, None)
+
+    # Now show the previous refine question
+    prev_feat = feat
+
+    return jsonify({
+        "is_guess": False,
+        "is_refining": True,
+        "question": feature_questions[prev_feat],
+        "can_go_back": game_state["refine_index"] > 0
+    })
+
+
+@app.route("/api/back", methods=["POST"])
+def api_back():
+    global game_state, tree, feature_names, feature_questions
+
+    # No going back during refining mode
+    if game_state["phase"] == "refining":
+        return jsonify({"error": "Cannot go back during refining"}), 400
+
+    asked = game_state["asked_features"]
+
+    # If nothing answered yet → cannot go back
+    if len(asked) == 0:
+        return jsonify({"error": "Already at first question"}), 400
+
+    # Remove last answered question
+    last_feature = asked.pop()
+    game_state["answers"].pop(last_feature, None)
+    game_state["user_features"].pop(last_feature, None)
+
+    # Re-traverse from root
+    node = 0
+
+    for feat in asked:
+        val = game_state["answers"][feat]
+        feature_index = feature_names.index(feat)
+
+        # Follow the actual tree path
+        # traverse until we hit the split node for this feature (or leaf)
+        progressed = False
+        while True:
+            if is_leaf(node):
+                break
+            if tree.feature[node] == feature_index:
+                thresh = tree.threshold[node]
+                node = tree.children_left[node] if val <= thresh else tree.children_right[node]
+                progressed = True
+                break
+            # otherwise step into left child and continue searching
+            left = tree.children_left[node]
+            if left == tree.children_right[node]:
+                break
+            node = left
+
+        # if we didn't find the exact split node, just continue with current node state
+
+    game_state["current_node"] = int(node)
+
+    # If leaf → return the guess
+    if is_leaf(node):
+        animal_idx = np.argmax(tree.value[node][0])
+        animal = model.classes_[animal_idx]
+        return jsonify({
+            "is_guess": True,
+            "character": animal,
+            "is_second_guess": False,
+            "can_go_back": len(asked) > 0
+        })
+
+    # Otherwise return previous question
+    feat_index = tree.feature[node]
+    feat_name = feature_names[feat_index]
+    return jsonify({
+        "is_guess": False,
+        "question": feature_questions[feat_name],
+        "can_go_back": len(asked) > 0
+    })
+
 
 @app.route("/api/learn", methods=["POST"])
 def api_learn():

@@ -49,6 +49,12 @@ async function sendAnswer(answer) {
     });
 
     const data = await res.json();
+
+    if (data.error) {
+        questionText.textContent = data.error;
+        return;
+    }
+
     updateUI(data);
 }
 
@@ -73,37 +79,117 @@ async function refineAnswer(answer) {
     });
 
     const data = await res.json();
-    updateUI(data);
-}
 
-function updateUI(data) {
-    if (data.is_guess) {
-        // GUESS SCREEN
-        questionText.textContent = `My guess is… ${data.character}! Is that correct?`;
-
-        answerButtonsContainer.innerHTML = `
-            <button onclick="guessYes()">Yes</button>
-            <button onclick="guessNo(${data.is_second_guess})">No</button>
-        `;
-
+    if (data.error) {
+        questionText.textContent = data.error;
         return;
     }
 
-    // QUESTION SCREEN
+    updateUI(data);
+}
+
+async function goBack() {
+    questionText.textContent = "Going back...";
+    answerButtonsContainer.innerHTML = `<div class="spinner"></div>`;
+
+    try {
+        const res = await fetch(`${API}/api/back`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+
+        const data = await res.json();
+
+        if (data.error) {
+            questionText.textContent = data.error;
+            answerButtonsContainer.innerHTML = `<button onclick="goBack()">Try Again</button>`;
+            return;
+        }
+
+        updateUI(data);
+
+    } catch (err) {
+        console.error(err);
+        questionText.textContent = "Error going back.";
+    }
+}
+async function refineBack() {
+    questionText.textContent = "Going back...";
+    answerButtonsContainer.innerHTML = `<div class="spinner"></div>`;
+
+    const res = await fetch(`${API}/api/refine_back`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+    });
+
+    const data = await res.json();
+
+    if (data.error) {
+        questionText.textContent = data.error;
+        return;
+    }
+
+    updateUI(data);
+}
+
+
+function updateUI(data) {
+    // ============================
+    //  GUESS SCREEN
+    // ============================
+    if (data.is_guess) {
+        questionText.textContent = `My guess is… ${data.character}! Is that correct?`;
+
+        answerButtonsContainer.innerHTML = `
+    <button onclick="guessYes()">Yes</button>
+    <button onclick="guessNo(${data.is_second_guess})">No</button>
+    ${
+        data.can_go_back
+            ? (data.is_refining
+                ? `<button onclick="refineBack()">⬅ Back</button>`
+                : `<button onclick="goBack()">⬅ Back</button>`)
+            : ""
+    }
+`;
+        return;
+    }
+
+    // ============================
+    //  QUESTION SCREEN
+    // ============================
     questionText.textContent = data.question;
 
     if (data.is_refining) {
-        answerButtonsContainer.innerHTML = `
-            <button onclick="refineAnswer('yes')">Yes</button>
-            <button onclick="refineAnswer('no')">No</button>
-        `;
-    } else {
-        answerButtonsContainer.innerHTML = `
-            <button onclick="sendAnswer('yes')">Yes</button>
-            <button onclick="sendAnswer('no')">No</button>
-        `;
+    let html = `
+        <button onclick="refineAnswer('yes')">Yes</button>
+        <button onclick="refineAnswer('no')">No</button>
+    `;
+
+    if (data.can_go_back) {
+        html += `<button onclick="refineBack()">⬅ Back</button>`;
     }
+
+    answerButtonsContainer.innerHTML = html;
+    return;
 }
+
+
+
+    // Normal tree traversal
+    let html = `
+        <button onclick="sendAnswer('yes')">Yes</button>
+        <button onclick="sendAnswer('no')">No</button>
+    `;
+
+    if (data.can_go_back) html += `<button onclick="goBack()">⬅ Back</button>`;
+
+    answerButtonsContainer.innerHTML = html;
+}
+
+
+// ======================================================
+//       GUESS HANDLERS
+// ======================================================
 
 function guessYes() {
     questionText.textContent = "Great! I guessed it!";
@@ -113,12 +199,26 @@ function guessYes() {
 }
 
 function guessNo(isSecondGuess) {
+    // Extract wrong guess cleanly
+    const text = document.querySelector(".question-text").textContent;
+    window.lastWrongGuess = text
+        .replace("My guess is…", "")
+        .replace("Is that correct?", "")
+        .replace("!", "")
+        .trim();
+
     if (isSecondGuess) {
         showLearningForm();
         return;
     }
+
     startRefining();
 }
+
+
+// ======================================================
+//          LEARNING FORM
+// ======================================================
 
 function showLearningForm() {
     questionText.textContent = "Help me learn!";
@@ -153,6 +253,7 @@ async function submitLearning(e) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+            wrong_guess: window.lastWrongGuess,
             correct_answer: correct,
             new_question: q,
             new_question_answer: a
@@ -161,6 +262,11 @@ async function submitLearning(e) {
 
     resetGame();
 }
+
+
+// ======================================================
+//          RESET GAME
+// ======================================================
 
 function resetGame() {
     gameContainer.classList.add("hidden");
