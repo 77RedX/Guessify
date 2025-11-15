@@ -149,17 +149,20 @@ Add full row
 Retrain model
 
 🛠 Installation
+First go into the Guessify directory in terminal. Create a virtual environment folder named .venv
+
+python -m venv .venv
+
+Then activate venv using 
+
+.venv\Scripts\activate.bat
+
 1️⃣ Install dependencies
-pip install flask flask-cors pandas scikit-learn joblib numpy
+pip install -r requirements.txt
 
 2️⃣ Run the server
-python app.py
+start.bat (Open by double-clicking or using terminal)
 
-3️⃣ Open the frontend
-
-Visit:
-
-http://127.0.0.1:5000
 
 🧪 Adding Knowledge Manually
 
