@@ -83,18 +83,6 @@ Automatically reloads + retrains model after learning
 
 New features (columns) added dynamically
 
-📁 Project Structure
-project/
-│── frontend/
-│   ├── index.html
-│   ├── styles.css
-│   └── script.js
-│
-│── dataset.csv
-│── tree.joblib
-│── app.py
-│── README.md
-
 🧠 How Guessify Works (Deep Dive)
 1. Tree Phase
 
