@@ -225,10 +225,23 @@ def api_refine_answer():
     if game_state["refine_index"] >= len(game_state["refine_queue"]):
         game_state["phase"] = "refining"
 
-        user_vec = np.array([game_state["answers"].get(f, 0) for f in feature_names])
-        distances = ((X_df.values - user_vec) != 0).sum(axis=1)
-        best = np.argmin(distances)
+        # Build user vector: 1 = yes, 0 = no, -1 = unknown
+        user_vec = np.array([game_state["answers"].get(f, -1) for f in feature_names])
+
+        # Compute Hamming distance ignoring unknown answers
+        distances = []
+        for row in X_df.values:
+            d = 0
+            for a, b in zip(user_vec, row):
+                if a == -1:
+                    continue  # Skip unanswered features
+                if a != b:
+                    d += 1
+            distances.append(d)
+
+        best = int(np.argmin(distances))
         animal = df["Animal"].iloc[best]
+
 
         game_state["second_guess"] = animal
 

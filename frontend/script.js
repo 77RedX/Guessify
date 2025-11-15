@@ -211,14 +211,47 @@ async function submitLearningStep1(e) {
     }
 
     if (data.is_filling) {
-        updateUI(data);
-        return;
+    showNewAnimalConfirm(data);
+    return;
     }
 
     if (data.status === "done" || data.status === "ok") {
         questionText.textContent = "Thanks! I updated my knowledge!";
         answerButtonsContainer.innerHTML = `<button onclick="resetGame()">Play Again</button>`;
     }
+}
+// SHOW NEW ANIMAL MESSAGE
+function showNewAnimalConfirm(firstFillData) {
+    questionText.textContent = 
+        "This animal does not exist in our dataset. Would you like to add it?";
+
+    answerButtonsContainer.innerHTML = `
+        <button onclick="beginAnimalFilling('${encodeURIComponent(JSON.stringify(firstFillData))}')">
+            Add Animal
+        </button>
+        <button onclick="resetGame()">New Game</button>
+    `;
+}
+
+// ANIMAL FILLING MESSAGE
+
+function beginAnimalFilling(dataString) {
+    const data = JSON.parse(decodeURIComponent(dataString));
+
+    questionText.textContent = 
+        "Please fill out all the following information about this animal.";
+
+    answerButtonsContainer.innerHTML = `
+        <button onclick="startFilling('${encodeURIComponent(JSON.stringify(data))}')">
+            Proceed
+        </button>
+    `;
+}
+// START FILLING
+
+function startFilling(dataString) {
+    const data = JSON.parse(decodeURIComponent(dataString));
+    updateUI(data);   // This triggers the first attribute question
 }
 
 // ======================================================
