@@ -48,147 +48,110 @@ async function sendAnswer(answer) {
         body: JSON.stringify({ answer })
     });
 
-    const data = await res.json();
-
-    if (data.error) {
-        questionText.textContent = data.error;
-        return;
-    }
-
-    updateUI(data);
+    updateUI(await res.json());
 }
 
 async function startRefining() {
     questionText.textContent = "Let me think more...";
     answerButtonsContainer.innerHTML = `<div class="spinner"></div>`;
 
-    const res = await fetch(`${API}/api/start_refining`, {
+    const data = await (await fetch(`${API}/api/start_refining`, {
         method: "POST",
         headers: { "Content-Type": "application/json" }
-    });
+    })).json();
 
-    const data = await res.json();
     updateUI(data);
 }
 
 async function refineAnswer(answer) {
-    const res = await fetch(`${API}/api/refine_answer`, {
+    const data = await (await fetch(`${API}/api/refine_answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ answer })
-    });
+    })).json();
 
-    const data = await res.json();
+    updateUI(data);
+}
 
-    if (data.error) {
-        questionText.textContent = data.error;
-        return;
-    }
+async function refineBack() {
+    const data = await (await fetch(`${API}/api/refine_back`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+    })).json();
 
     updateUI(data);
 }
 
 async function goBack() {
-    questionText.textContent = "Going back...";
-    answerButtonsContainer.innerHTML = `<div class="spinner"></div>`;
-
-    try {
-        const res = await fetch(`${API}/api/back`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" }
-        });
-
-        const data = await res.json();
-
-        if (data.error) {
-            questionText.textContent = data.error;
-            answerButtonsContainer.innerHTML = `<button onclick="goBack()">Try Again</button>`;
-            return;
-        }
-
-        updateUI(data);
-
-    } catch (err) {
-        console.error(err);
-        questionText.textContent = "Error going back.";
-    }
-}
-async function refineBack() {
-    questionText.textContent = "Going back...";
-    answerButtonsContainer.innerHTML = `<div class="spinner"></div>`;
-
-    const res = await fetch(`${API}/api/refine_back`, {
+    const data = await (await fetch(`${API}/api/back`, {
         method: "POST",
         headers: { "Content-Type": "application/json" }
-    });
+    })).json();
 
-    const data = await res.json();
+    updateUI(data);
+}
+
+function updateUI(data) {
 
     if (data.error) {
         questionText.textContent = data.error;
         return;
     }
 
-    updateUI(data);
-}
+    // --- GIANT LEARNING MODES ---
 
+    if (data.is_filling) {
+        questionText.textContent = data.question;
+        answerButtonsContainer.innerHTML = `
+            <button onclick="fillAttribute('yes')">Yes</button>
+            <button onclick="fillAttribute('no')">No</button>
+        `;
+        return;
+    }
 
-function updateUI(data) {
-    // ============================
-    //  GUESS SCREEN
-    // ============================
+    // --- GUESS SCREEN ---
     if (data.is_guess) {
         questionText.textContent = `My guess is… ${data.character}! Is that correct?`;
 
         answerButtonsContainer.innerHTML = `
-    <button onclick="guessYes()">Yes</button>
-    <button onclick="guessNo(${data.is_second_guess})">No</button>
-    ${
-        data.can_go_back
-            ? (data.is_refining
-                ? `<button onclick="refineBack()">⬅ Back</button>`
-                : `<button onclick="goBack()">⬅ Back</button>`)
-            : ""
-    }
-`;
+            <button onclick="guessYes()">Yes</button>
+            <button onclick="guessNo(${data.is_second_guess})">No</button>
+            ${
+                data.can_go_back
+                    ? (data.is_refining
+                        ? `<button onclick="refineBack()">⬅ Back</button>`
+                        : `<button onclick="goBack()">⬅ Back</button>`)
+                    : ""
+            }
+        `;
         return;
     }
 
-    // ============================
-    //  QUESTION SCREEN
-    // ============================
-    questionText.textContent = data.question;
-
+    // --- REFINING ---
     if (data.is_refining) {
-    let html = `
-        <button onclick="refineAnswer('yes')">Yes</button>
-        <button onclick="refineAnswer('no')">No</button>
-    `;
-
-    if (data.can_go_back) {
-        html += `<button onclick="refineBack()">⬅ Back</button>`;
+        questionText.textContent = data.question;
+        answerButtonsContainer.innerHTML = `
+            <button onclick="refineAnswer('yes')">Yes</button>
+            <button onclick="refineAnswer('no')">No</button>
+            ${data.can_go_back ? `<button onclick="refineBack()">⬅ Back</button>` : ""}
+        `;
+        return;
     }
 
-    answerButtonsContainer.innerHTML = html;
-    return;
+    // --- NORMAL TREE QUESTION ---
+    if (data.question) {
+        questionText.textContent = data.question;
+        answerButtonsContainer.innerHTML = `
+            <button onclick="sendAnswer('yes')">Yes</button>
+            <button onclick="sendAnswer('no')">No</button>
+            ${data.can_go_back ? `<button onclick="goBack()">⬅ Back</button>` : ""}
+        `;
+        return;
+    }
 }
-
-
-
-    // Normal tree traversal
-    let html = `
-        <button onclick="sendAnswer('yes')">Yes</button>
-        <button onclick="sendAnswer('no')">No</button>
-    `;
-
-    if (data.can_go_back) html += `<button onclick="goBack()">⬅ Back</button>`;
-
-    answerButtonsContainer.innerHTML = html;
-}
-
 
 // ======================================================
-//       GUESS HANDLERS
+//  GUESS RESPONSES
 // ======================================================
 
 function guessYes() {
@@ -199,39 +162,78 @@ function guessYes() {
 }
 
 function guessNo(isSecondGuess) {
-    // Extract wrong guess cleanly
-    const text = document.querySelector(".question-text").textContent;
-    window.lastWrongGuess = text
-        .replace("My guess is…", "")
-        .replace("Is that correct?", "")
-        .replace("!", "")
-        .trim();
+    const t = document.querySelector(".question-text").textContent;
+    window.lastWrongGuess = t.replace("My guess is…", "")
+                             .replace("Is that correct?", "")
+                             .replace("!", "")
+                             .trim();
 
     if (isSecondGuess) {
-        showLearningForm();
+        showLearningStep1();
         return;
     }
 
     startRefining();
 }
 
-
 // ======================================================
-//          LEARNING FORM
+//  LEARNING (STEP 1) — Ask for correct animal
 // ======================================================
 
-function showLearningForm() {
-    questionText.textContent = "Help me learn!";
-
+function showLearningStep1() {
+    questionText.textContent = "Help me learn! What animal were you thinking of?";
     answerButtonsContainer.innerHTML = `
-        <form onsubmit="submitLearning(event)">
+        <form onsubmit="submitLearningStep1(event)">
             <label>Correct Animal:</label>
             <input id="correct" required>
+            <button type="submit">Continue</button>
+        </form>
+    `;
+}
 
+async function submitLearningStep1(e) {
+    e.preventDefault();
+
+    const correct = document.getElementById("correct").value.trim();
+
+    const data = await (await fetch(`${API}/api/learn`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+            wrong_guess: window.lastWrongGuess,
+            correct_answer: correct
+        })
+    })).json();
+
+    if (data.status === "ask_distinguishing") {
+        showDistinguishingForm(correct);
+        return;
+    }
+
+    if (data.is_filling) {
+        updateUI(data);
+        return;
+    }
+
+    if (data.status === "done" || data.status === "ok") {
+        questionText.textContent = "Thanks! I updated my knowledge!";
+        answerButtonsContainer.innerHTML = `<button onclick="resetGame()">Play Again</button>`;
+    }
+}
+
+// ======================================================
+//  LEARNING (STEP 2, EXISTING ANIMAL)
+// ======================================================
+
+function showDistinguishingForm(correct) {
+    questionText.textContent = `Give me a question that distinguishes ${correct} from my previous guess.`;
+
+    answerButtonsContainer.innerHTML = `
+        <form onsubmit="submitDistinguishing(event, '${correct}')">
             <label>Distinguishing Question:</label>
             <input id="q" required>
 
-            <label>Correct answer to that question:</label>
+            <label>Answer for ${correct}:</label>
             <select id="a">
                 <option>Yes</option>
                 <option>No</option>
@@ -242,30 +244,51 @@ function showLearningForm() {
     `;
 }
 
-async function submitLearning(e) {
+async function submitDistinguishing(e, correct) {
     e.preventDefault();
 
-    const correct = document.getElementById("correct").value;
-    const q = document.getElementById("q").value;
+    const q = document.getElementById("q").value.trim();
     const a = document.getElementById("a").value;
 
-    await fetch(`${API}/api/learn`, {
+    const data = await (await fetch(`${API}/api/learn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {"Content-Type":"application/json"},
         body: JSON.stringify({
             wrong_guess: window.lastWrongGuess,
             correct_answer: correct,
             new_question: q,
             new_question_answer: a
         })
-    });
+    })).json();
 
-    resetGame();
+    questionText.textContent = "Thanks! I updated my knowledge!";
+    answerButtonsContainer.innerHTML = `<button onclick="resetGame()">Play Again</button>`;
 }
 
+// ======================================================
+//   LEARNING (ATTRIBUTE FILLING FOR NEW ANIMALS)
+// ======================================================
+
+async function fillAttribute(answer) {
+    const data = await (await fetch(`${API}/api/attribute_answer`, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({answer})
+    })).json();
+
+    if (data.is_filling) {
+        updateUI(data);
+        return;
+    }
+
+    if (data.status === "done") {
+        questionText.textContent = `Great! I added ${data.animal_added} to my knowledge!`;
+        answerButtonsContainer.innerHTML = `<button onclick="resetGame()">Play Again</button>`;
+    }
+}
 
 // ======================================================
-//          RESET GAME
+// RESET
 // ======================================================
 
 function resetGame() {

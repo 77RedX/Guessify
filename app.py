@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import pandas as pd
@@ -86,24 +85,17 @@ feature_questions = {f: make_question_text(f) for f in feature_names}
 # =====================================================
 
 game_state = {
-    "phase": "idle",          # idle / playing / refining
+    "phase": "idle",            # idle / playing / refining / filling_attributes
     "current_node": 0,
     "answers": {},
     "asked_features": [],
     "user_features": {},
     "refine_queue": [],
     "refine_index": 0,
-    "second_guess": None
+    "second_guess": None,
 }
 
 # Utilities
-def clean_json(obj):
-    if isinstance(obj, dict): return {k: clean_json(v) for k, v in obj.items()}
-    if isinstance(obj, list): return [clean_json(v) for v in obj]
-    if isinstance(obj, np.integer): return int(obj)
-    if isinstance(obj, np.floating): return float(obj)
-    return obj
-
 def get_node_feature(idx):
     f = tree.feature[idx]
     return None if f == -2 else feature_names[f]
@@ -154,7 +146,6 @@ def api_start():
         "can_go_back": False
     })
 
-
 @app.route("/api/answer", methods=["POST"])
 def api_answer():
     if game_state["phase"] != "playing":
@@ -168,7 +159,6 @@ def api_answer():
 
     node = game_state["current_node"]
     feat = get_node_feature(node)
-    # safety: if feat is None, something's off
     if feat is None:
         return jsonify({"error": "Invalid traversal state"}), 500
 
@@ -197,14 +187,12 @@ def api_answer():
         "can_go_back": len(game_state["asked_features"]) > 0
     })
 
-
 @app.route("/api/start_refining", methods=["POST"])
 def api_start_refining():
     game_state["phase"] = "refining"
 
     asked = set(game_state["answers"].keys())
     remaining = [f for f in feature_names if f not in asked]
-
     remaining.sort(key=lambda f: importances[feature_names.index(f)], reverse=True)
 
     count = max(4, min(8, max(1, len(remaining) // 3)))
@@ -222,26 +210,21 @@ def api_start_refining():
         "can_go_back": False
     })
 
-
 @app.route("/api/refine_answer", methods=["POST"])
 def api_refine_answer():
     ans = request.json.get("answer", "").lower().strip()
     val = 1 if ans == "yes" else 0
 
-    idx = game_state["refine_index"]
-    feat = game_state["refine_queue"][idx]
+    i = game_state["refine_index"]
+    feat = game_state["refine_queue"][i]
 
-    # record the user's refine answer
     game_state["answers"][feat] = val
     game_state["user_features"][feat] = val
-
-    # advance index (we have now answered idx-th refining question)
     game_state["refine_index"] += 1
 
-    # If we've finished the refine queue -> make second guess
     if game_state["refine_index"] >= len(game_state["refine_queue"]):
-        
         game_state["phase"] = "refining"
+
         user_vec = np.array([game_state["answers"].get(f, 0) for f in feature_names])
         distances = ((X_df.values - user_vec) != 0).sum(axis=1)
         best = np.argmin(distances)
@@ -249,110 +232,77 @@ def api_refine_answer():
 
         game_state["second_guess"] = animal
 
-        # Allow going back from the second guess if there is at least one answered question
-        can_go_back = len(game_state["asked_features"]) > 0 or game_state["refine_index"] > 0
-
         return jsonify({
             "is_guess": True,
             "character": animal,
             "is_second_guess": True,
             "is_refining": True,
-            "can_go_back": can_go_back
+            "can_go_back": True
         })
 
-    # Otherwise send the next refining question.
-    # Allow back once at least one refine answer has been given (so second refine question shows Back)
     nxt_feat = game_state["refine_queue"][game_state["refine_index"]]
-    can_go_back = game_state["refine_index"] > 0  # True if we've answered at least one refine question
 
     return jsonify({
         "is_guess": False,
         "is_refining": True,
         "question": feature_questions[nxt_feat],
-        "can_go_back": can_go_back
+        "can_go_back": True
     })
+
 @app.route("/api/refine_back", methods=["POST"])
 def api_refine_back():
-    # Must be in refining phase
     if game_state["phase"] != "refining":
         return jsonify({"error": "Not in refining mode"}), 400
 
-    # Cannot go back from the very first refine question
     if game_state["refine_index"] <= 0:
         return jsonify({"error": "Already at first refine question"}), 400
 
-    # Move back one refine question
     game_state["refine_index"] -= 1
 
-    # Identify which feature we are undoing
     feat = game_state["refine_queue"][game_state["refine_index"]]
 
-    # Remove its stored answer
     game_state["answers"].pop(feat, None)
     game_state["user_features"].pop(feat, None)
-
-    # Now show the previous refine question
-    prev_feat = feat
 
     return jsonify({
         "is_guess": False,
         "is_refining": True,
-        "question": feature_questions[prev_feat],
+        "question": feature_questions[feat],
         "can_go_back": game_state["refine_index"] > 0
     })
 
-
 @app.route("/api/back", methods=["POST"])
 def api_back():
-    global game_state, tree, feature_names, feature_questions
-
-    # No going back during refining mode
     if game_state["phase"] == "refining":
         return jsonify({"error": "Cannot go back during refining"}), 400
 
     asked = game_state["asked_features"]
-
-    # If nothing answered yet → cannot go back
     if len(asked) == 0:
         return jsonify({"error": "Already at first question"}), 400
 
-    # Remove last answered question
-    last_feature = asked.pop()
-    game_state["answers"].pop(last_feature, None)
-    game_state["user_features"].pop(last_feature, None)
+    last = asked.pop()
+    game_state["answers"].pop(last, None)
+    game_state["user_features"].pop(last, None)
 
-    # Re-traverse from root
     node = 0
 
     for feat in asked:
         val = game_state["answers"][feat]
-        feature_index = feature_names.index(feat)
+        idx = feature_names.index(feat)
 
-        # Follow the actual tree path
-        # traverse until we hit the split node for this feature (or leaf)
-        progressed = False
-        while True:
-            if is_leaf(node):
+        while not is_leaf(node):
+            if tree.feature[node] == idx:
+                node = tree.children_left[node] if val <= tree.threshold[node] else tree.children_right[node]
                 break
-            if tree.feature[node] == feature_index:
-                thresh = tree.threshold[node]
-                node = tree.children_left[node] if val <= thresh else tree.children_right[node]
-                progressed = True
-                break
-            # otherwise step into left child and continue searching
             left = tree.children_left[node]
             if left == tree.children_right[node]:
                 break
             node = left
 
-        # if we didn't find the exact split node, just continue with current node state
+    game_state["current_node"] = node
 
-    game_state["current_node"] = int(node)
-
-    # If leaf → return the guess
     if is_leaf(node):
-        animal_idx = np.argmax(tree.value[node][0])
-        animal = model.classes_[animal_idx]
+        animal = model.classes_[np.argmax(tree.value[node][0])]
         return jsonify({
             "is_guess": True,
             "character": animal,
@@ -360,63 +310,128 @@ def api_back():
             "can_go_back": len(asked) > 0
         })
 
-    # Otherwise return previous question
-    feat_index = tree.feature[node]
-    feat_name = feature_names[feat_index]
+    feat_name = feature_names[tree.feature[node]]
     return jsonify({
         "is_guess": False,
         "question": feature_questions[feat_name],
         "can_go_back": len(asked) > 0
     })
 
+# =====================================================
+#     LEARNING (NEW) — EXISTING VS NEW ANIMAL
+# =====================================================
 
 @app.route("/api/learn", methods=["POST"])
 def api_learn():
     global df, model, tree, X_df, feature_names, importances, feature_questions
 
     data = request.json
-    wrong = data.get("wrong_guess")
     correct = data.get("correct_answer")
-    question = data.get("new_question")
-    ans = data.get("new_question_answer")
+    wrong = data.get("wrong_guess")
 
-    if not correct or not question:
-        return jsonify({"error": "Missing fields"}), 400
-
-    feature = reverse_question(question)
-
-    if feature not in df.columns:
-        df[feature] = 0
+    if not correct:
+        return jsonify({"error": "Missing correct_answer"}), 400
 
     exists = correct in df["Animal"].values
 
-    if exists:
-        df.loc[df["Animal"] == correct, feature] = 1 if ans.lower()=="yes" else 0
-    else:
-        new_row = {}
-        for col in df.columns:
-            if col == "Animal":
-                continue
-            val = game_state["user_features"].get(col, game_state["answers"].get(col, 0))
-            new_row[col] = int(val)
-        new_row["Animal"] = correct
+    # Case: This request includes the distinguishing question
+    q = data.get("new_question")
+    a = data.get("new_question_answer")
+
+    if exists and q and a:
+        feature = reverse_question(q)
+        if feature not in df.columns:
+            df[feature] = 0
+
+        df.loc[df["Animal"] == correct, feature] = 1 if a.lower() == "yes" else 0
+
+        df.to_csv(DATA_FILE, index=False)
+        model = train_model(df)
+        joblib.dump(model, MODEL_FILE)
+
+        tree = model.tree_
+        X_df = df.drop("Animal", axis=1).astype(int)
+        feature_names = X_df.columns.tolist()
+        importances = model.feature_importances_
+        feature_questions = {f: make_question_text(f) for f in feature_names}
+
+        reset_state()
+        return jsonify({"status": "ok", "learned": "updated_existing"})
+
+    if exists and not (q and a):
+        return jsonify({"status": "ask_distinguishing"})
+
+    # NEW ANIMAL CASE
+    game_state["phase"] = "filling_attributes"
+    game_state["new_animal"] = correct
+    game_state["fill_index"] = 0
+    game_state["fill_answers"] = {}
+
+    first_feat = feature_names[0] if feature_names else None
+
+    if not first_feat:
+        df.loc[len(df)] = {"Animal": correct}
+        df.to_csv(DATA_FILE, index=False)
+        reset_state()
+        return jsonify({"status": "done", "animal_added": correct})
+
+    return jsonify({
+        "is_filling": True,
+        "feature": first_feat,
+        "question": feature_questions[first_feat],
+        "index": 0
+    })
+
+@app.route("/api/attribute_answer", methods=["POST"])
+def api_attribute_answer():
+    global df, model, tree, X_df, feature_names, importances, feature_questions
+
+    if game_state["phase"] != "filling_attributes":
+        return jsonify({"error": "Not in attribute filling mode"}), 400
+
+    ans = request.json.get("answer", "").lower().strip()
+    if ans not in ["yes", "no"]:
+        return jsonify({"error": "Invalid answer"}), 400
+
+    val = 1 if ans == "yes" else 0
+    idx = game_state["fill_index"]
+    feat = feature_names[idx]
+
+    game_state["fill_answers"][feat] = val
+    game_state["fill_index"] += 1
+
+    if game_state["fill_index"] >= len(feature_names):
+        new_row = {f: game_state["fill_answers"].get(f, 0) for f in feature_names}
+        new_row["Animal"] = game_state["new_animal"]
 
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        df[df.columns[df.columns!="Animal"]] = df[df.columns[df.columns!="Animal"]].fillna(0)
 
-        df.loc[df["Animal"] == correct, feature] = 1 if ans.lower()=="yes" else 0
+        df.to_csv(DATA_FILE, index=False)
+        model = train_model(df)
+        joblib.dump(model, MODEL_FILE)
 
-    df[df.columns[df.columns!="Animal"]] = df[df.columns[df.columns!="Animal"]].fillna(0).astype(int)
-    df.to_csv(DATA_FILE, index=False)
+        tree = model.tree_
+        X_df = df.drop("Animal", axis=1).astype(int)
+        feature_names = X_df.columns.tolist()
+        importances = model.feature_importances_
+        feature_questions = {f: make_question_text(f) for f in feature_names}
 
-    model = train_model(df)
-    joblib.dump(model, MODEL_FILE)
+        added = game_state["new_animal"]
+        reset_state()
 
-    tree = model.tree_
-    X_df = df.drop("Animal", axis=1).astype(int)
-    feature_names = X_df.columns.tolist()
-    importances = model.feature_importances_
-    feature_questions = {f: make_question_text(f) for f in feature_names}
+        return jsonify({"status": "done", "animal_added": added})
 
+    next_feat = feature_names[game_state["fill_index"]]
+
+    return jsonify({
+        "is_filling": True,
+        "feature": next_feat,
+        "question": feature_questions[next_feat],
+        "index": game_state["fill_index"]
+    })
+
+def reset_state():
     game_state.update({
         "phase": "idle",
         "current_node": 0,
@@ -427,9 +442,6 @@ def api_learn():
         "refine_index": 0,
         "second_guess": None
     })
-
-    return jsonify({"status": "ok"})
-
 
 if __name__ == "__main__":
     app.run(debug=True)
