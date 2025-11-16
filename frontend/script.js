@@ -2,6 +2,7 @@ const API = "http://127.0.0.1:5000";
 
 let loadingScreen, startScreen, gameContainer, startBtn;
 let questionText, answerButtonsContainer;
+let backgroundMusic = null; // Audio element
 
 document.addEventListener("DOMContentLoaded", () => {
     loadingScreen = document.getElementById("loading-screen");
@@ -10,6 +11,11 @@ document.addEventListener("DOMContentLoaded", () => {
     startBtn = document.getElementById("start-btn");
     questionText = document.querySelector(".question-text");
     answerButtonsContainer = document.getElementById("answer-buttons");
+    backgroundMusic = document.getElementById("background-music"); // Get audio element
+
+    if (backgroundMusic) {
+        backgroundMusic.loop = true; // Ensure it loops
+    }
 
     window.addEventListener("load", onLoaded);
     startBtn.addEventListener("click", startGame);
@@ -26,6 +32,10 @@ function onLoaded() {
 }
 
 async function startGame() {
+    if (backgroundMusic) {
+        backgroundMusic.play().catch(e => console.error("Audio play failed:", e));
+    }
+
     startScreen.classList.add("hidden");
     loadingScreen.classList.remove("hidden");
 
@@ -114,8 +124,8 @@ function updateUI(data) {
         questionText.textContent = `My guess is… ${data.character}! Is that correct?`;
 
         answerButtonsContainer.innerHTML = `
-            <button onclick="guessYes()">Yes</button>
-            <button onclick="guessNo(${data.is_second_guess})">No</button>
+            <button id="yes-btn" onclick="guessYes()">Yes</button>
+            <button id="no-btn" onclick="guessNo(${data.is_second_guess})">No</button>
             ${
                 data.can_go_back
                     ? (data.is_refining
@@ -131,8 +141,8 @@ function updateUI(data) {
     if (data.is_refining) {
         questionText.textContent = data.question;
         answerButtonsContainer.innerHTML = `
-            <button onclick="refineAnswer('yes')">Yes</button>
-            <button onclick="refineAnswer('no')">No</button>
+            <button id="yes-btn" onclick="refineAnswer('yes')">Yes</button>
+            <button id="no-btn" onclick="refineAnswer('no')">No</button>
             ${data.can_go_back ? `<button onclick="refineBack()">⬅ Back</button>` : ""}
         `;
         return;
@@ -142,8 +152,8 @@ function updateUI(data) {
     if (data.question) {
         questionText.textContent = data.question;
         answerButtonsContainer.innerHTML = `
-            <button onclick="sendAnswer('yes')">Yes</button>
-            <button onclick="sendAnswer('no')">No</button>
+            <button id="yes-btn" onclick="sendAnswer('yes')">Yes</button>
+            <button id="no-btn" onclick="sendAnswer('no')">No</button>
             ${data.can_go_back ? `<button onclick="goBack()">⬅ Back</button>` : ""}
         `;
         return;
@@ -183,10 +193,10 @@ function guessNo(isSecondGuess) {
 function showLearningStep1() {
     questionText.textContent = "Help me learn! What animal were you thinking of?";
     answerButtonsContainer.innerHTML = `
-        <form onsubmit="submitLearningStep1(event)">
-            <label>Correct Animal:</label>
-            <input id="correct" required>
-            <button type="submit">Continue</button>
+        <form class="learning-form" onsubmit="submitLearningStep1(event)">
+            <label for="correct-answer">Correct Animal:</label>
+            <input id="correct-answer" required>
+            <button type="submit" id="submit-learn-btn">Continue</button>
         </form>
     `;
 }
@@ -194,7 +204,7 @@ function showLearningStep1() {
 async function submitLearningStep1(e) {
     e.preventDefault();
 
-    const correct = document.getElementById("correct").value.trim();
+    const correct = document.getElementById("correct-answer").value.trim();
 
     const data = await (await fetch(`${API}/api/learn`, {
         method: "POST",
@@ -262,17 +272,17 @@ function showDistinguishingForm(correct) {
     questionText.textContent = `Give me a question that distinguishes ${correct} from my previous guess.`;
 
     answerButtonsContainer.innerHTML = `
-        <form onsubmit="submitDistinguishing(event, '${correct}')">
-            <label>Distinguishing Question:</label>
-            <input id="q" required>
+        <form class="learning-form" onsubmit="submitDistinguishing(event, '${correct}')">
+            <label for="new-question">Distinguishing Question:</label>
+            <input id="new-question" required>
 
-            <label>Answer for ${correct}:</label>
-            <select id="a">
+            <label for="new-question-answer">Answer for ${correct}:</label>
+            <select id="new-question-answer">
                 <option>Yes</option>
                 <option>No</option>
             </select>
 
-            <button type="submit">Submit</button>
+            <button type="submit" id="submit-learn-btn">Submit</button>
         </form>
     `;
 }
@@ -280,8 +290,8 @@ function showDistinguishingForm(correct) {
 async function submitDistinguishing(e, correct) {
     e.preventDefault();
 
-    const q = document.getElementById("q").value.trim();
-    const a = document.getElementById("a").value;
+    const q = document.getElementById("new-question").value.trim();
+    const a = document.getElementById("new-question-answer").value;
 
     const data = await (await fetch(`${API}/api/learn`, {
         method: "POST",
