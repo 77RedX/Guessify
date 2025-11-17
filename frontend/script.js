@@ -3,6 +3,7 @@ const API = "http://127.0.0.1:5000";
 let loadingScreen, startScreen, gameContainer, startBtn;
 let questionText, answerButtonsContainer;
 let backgroundMusic = null; // Audio element
+let isMuted=false;
 
 document.addEventListener("DOMContentLoaded", () => {
     loadingScreen = document.getElementById("loading-screen");
@@ -19,7 +20,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     window.addEventListener("load", onLoaded);
     startBtn.addEventListener("click", startGame);
+    document.getElementById("mute-btn").addEventListener("click", toggleMute);
 });
+
+function toggleMute() {
+    if (!backgroundMusic) return;
+
+    isMuted = !isMuted;
+    backgroundMusic.muted = isMuted;
+
+    const btn = document.getElementById("mute-btn");
+    btn.textContent = isMuted ? "🔇" : "🔊";
+}
 
 function onLoaded() {
     setTimeout(() => {
@@ -204,7 +216,11 @@ function showLearningStep1() {
 async function submitLearningStep1(e) {
     e.preventDefault();
 
-    const correct = document.getElementById("correct-answer").value.trim();
+    let correct = document.getElementById("correct-answer").value.trim();
+
+    // Normalize here
+    correct = correct[0].toUpperCase() + correct.slice(1).toLowerCase();
+
 
     const data = await (await fetch(`${API}/api/learn`, {
         method: "POST",

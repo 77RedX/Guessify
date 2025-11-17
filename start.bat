@@ -24,12 +24,12 @@ timeout /t 1 >nul
 goto WAIT_LOOP
 
 :BACKEND_READY
-echo ✅ Backend is running! Launching browser...
+echo  Backend is running! Launching browser...
 start "" http://127.0.0.1:5000
 goto END
 
 :FAIL
-echo ❌ Backend did not start within %max_wait% seconds.
+echo  Backend did not start within %max_wait% seconds.
 echo Check app.py for errors.
 pause
 goto END

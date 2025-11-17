@@ -40,6 +40,12 @@ def load_data():
 
     return df_local.drop_duplicates(subset=["Animal"]).dropna().reset_index(drop=True)
 
+def normalize_input_animal(name):
+    name = name.strip().lower()
+    if not name:
+        return ""
+    return name[0].upper() + name[1:]
+
 
 def train_model(df_local):
     X = df_local.drop("Animal", axis=1).astype(int)
@@ -339,13 +345,13 @@ def api_learn():
     global df, model, tree, X_df, feature_names, importances, feature_questions
 
     data = request.json
-    correct = data.get("correct_answer")
+    correct = data.get("correct_answer","")
     wrong = data.get("wrong_guess")
 
     if not correct:
         return jsonify({"error": "Missing correct_answer"}), 400
 
-    exists = correct in df["Animal"].values
+    exists = correct in df["Animal"].tolist()
 
     # Case: This request includes the distinguishing question
     q = data.get("new_question")
@@ -356,7 +362,10 @@ def api_learn():
         if feature not in df.columns:
             df[feature] = 0
 
-        df.loc[df["Animal"] == correct, feature] = 1 if a.lower() == "yes" else 0
+        user_val = 1 if a.lower() == "yes" else 0
+        wrong_val = 1 - user_val
+        df.loc[df["Animal"] == correct, feature] = user_val
+        df.loc[df["Animal"] == wrong, feature] = wrong_val
 
         df.to_csv(DATA_FILE, index=False)
         model = train_model(df)

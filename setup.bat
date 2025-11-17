@@ -9,7 +9,7 @@ call .venv\Scripts\activate.bat
 echo Installing dependencies...
 pip install -r requirements.txt
 
-echo ✅ Setup complete!
+echo Setup complete!
 pause
 
 exit /b
